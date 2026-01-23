@@ -16,8 +16,6 @@
     <img src="https://img.shields.io/badge/tutorial-BILIBILI-blue.svg" alt="Blog"/>
   </a>
 
-![Banner for GMR](./assets/GMR.png)
-
 ![GMR](./assets/GMR_pipeline.png)
 
 #### Key features of GMR:
