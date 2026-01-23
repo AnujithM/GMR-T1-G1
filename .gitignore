@@ -1,0 +1,7 @@
+
+# SMPL-X models (do not commit)
+assets/body_models/smplx/
+assets/**/smplx*.zip
+*.pkl
+*.npz
+
