@@ -1,0 +1,16 @@
+{
+  "clip_name": "QkWalk1_stageii",
+  "fps": 29.706840390879478,
+  "num_frames": 76,
+  "duration_sec": 2.5583333333333336,
+  "joint_limits_passed": true,
+  "joint_limits_reports": [],
+  "keypoint_errors": [],
+  "collision_passed": true,
+  "collision_reports": [],
+  "foot_ground_passed": true,
+  "foot_ground_reports": [],
+  "jitter_reports": [],
+  "all_passed": true,
+  "summary": "======================================================================\nValidation Report: QkWalk1_stageii\n======================================================================\n\nOverall Status: \u2713 PASS\n\nJoint Limits: \u2713 PASS\n\nSelf-Collision: \u2713 PASS\n\nFoot Ground Contact: \u2713 PASS\n\n======================================================================"
+}
