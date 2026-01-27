@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Example script for validating GMR retargeted motions.
+Script for validating GMR retargeted motions.
 
 Usage:
     python validate_motion.py --motion motion.pkl --robot unitree_g1 --output results/
@@ -65,12 +65,8 @@ def load_gmr_motion(motion_file: str):
     foot_poses = None
     if "foot_poses" in motion_data:
         foot_poses = motion_data["foot_poses"]
-    elif "local_body_pos" in motion_data:
-        # Try to extract from local_body_pos if structure is known
-        local_body_pos = motion_data["local_body_pos"]
-        link_body_list = motion_data.get("link_body_list", [])
-        # This depends on your data structure; customize as needed
-        foot_poses = {}
+    # Note: local_body_pos contains LOCAL positions, not global.
+    # Global foot positions will be computed via MuJoCo FK if foot_poses is None
     
     return motion_data, fps, root_pose, foot_poses, joint_positions
 
@@ -176,6 +172,11 @@ def validate_motion(
         verbose=verbose,
     )
     
+    # Extract joint limits from MuJoCo model
+    joint_limits = validator.get_joint_limits_from_model()
+    if not joint_limits:
+        raise RuntimeError(f"Failed to extract joint limits from MuJoCo model: {xml_path}")
+    
     # Run validation
     if verbose:
         print(f"\nRunning validation checks...")
@@ -187,7 +188,7 @@ def validate_motion(
         foot_poses=foot_poses,
         target_keypoints=target_keypoints,
         fps=fps,
-        joint_limits=config['joint_limits'],
+        joint_limits=joint_limits,
     )
     
     # Print summary
