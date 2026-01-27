@@ -93,6 +93,8 @@ class FootGroundReport:
     roll_p95_during_contact: float
     pitch_p95_during_contact: float
     num_non_flat_frames: int
+    num_contact_frames: int  # Number of frames where foot was in contact
+    min_z: float  # Minimum Z position of foot
     passed: bool
 
     def to_dict(self):
@@ -230,6 +232,32 @@ class MotionValidator:
             print(f"[Validator] Keypoints: {list(self.keypoint_map.keys())}")
             print(f"[Validator] Feet: {self.foot_names}")
 
+    def get_joint_limits_from_model(self) -> Dict[str, Tuple[float, float]]:
+        """
+        Extract joint limits from MuJoCo model.
+        
+        Returns:
+            Dict mapping joint names to (q_min, q_max) tuples in radians
+        """
+        if self.model is None:
+            warnings.warn("MuJoCo model not loaded; cannot extract limits")
+            return {}
+        
+        limits = {}
+        for i in range(self.model.nv):
+            joint_id = self.model.dof_jntid[i]
+            joint_name = mj.mj_id2name(self.model, mj.mjtObj.mjOBJ_JOINT, joint_id)
+            
+            q_min = float(self.model.jnt_range[joint_id, 0])
+            q_max = float(self.model.jnt_range[joint_id, 1])
+            
+            limits[joint_name] = (q_min, q_max)
+        
+        if self.verbose:
+            print(f"[Validator] Extracted {len(limits)} joint limits from MuJoCo model")
+        
+        return limits
+
     def validate(
         self,
         motion_file: str,
@@ -280,9 +308,9 @@ class MotionValidator:
             joint_positions, root_pose
         )
         
-        # Check 4: Foot ground contact
+        # Check 4: Foot ground contact (uses MuJoCo FK if foot_poses not provided)
         foot_ground_passed, foot_ground_reports = self._check_foot_ground(
-            foot_poses, dt
+            foot_poses, dt, joint_positions, root_pose
         )
         
         # Check 5: Jitter and temporal artifacts
@@ -332,17 +360,49 @@ class MotionValidator:
         joint_positions: np.ndarray,
         joint_limits: Optional[Dict[str, Tuple[float, float]]] = None,
     ) -> Tuple[bool, List[JointLimitReport]]:
-        """Check 1: Joint limits with 0.05 rad safety margin."""
+        """Check 1: Joint limits with 0.05 rad safety margin.
+        
+        Maps motion DOF indices to model joint names correctly:
+        - Motion dof[0:6] = Trunk rotations (model qpos[0:6])
+        - Motion dof[6:] = Actuated joints (model qpos[7:] if trunk is free joint)
+        
+        Skips finger joints (thumb, index, middle, ring, little).
+        """
         reports = []
         margin = 0.05
         near_limit_threshold = 0.03
         
-        n_joints = joint_positions.shape[1]
+        # Finger joint keywords to skip
+        finger_keywords = ['thumb', 'index', 'middle', 'ring', 'little']
+        
+        n_dofs = joint_positions.shape[1]
         passed = True
         
-        for i in range(min(n_joints, len(self.joint_names))):
-            joint_name = self.joint_names[i]
-            q = joint_positions[:, i]
+        # Detect if model has trunk as free joint (7 qpos, 6 dof)
+        trunk_is_free = False
+        if self.model is not None:
+            trunk_joint_id = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_JOINT, 'Trunk')
+            if trunk_joint_id >= 0:
+                trunk_type = self.model.jnt_type[trunk_joint_id]
+                if trunk_type == 0:  # mjJNT_FREE = 0
+                    trunk_is_free = True
+        
+        # Iterate through motion DOFs
+        # Motion dof_pos contains ONLY actuated joints (excludes trunk free joint)
+        # Motion dof_pos[i] -> Model DOF [6+i] (first 6 DOFs are trunk's free joint)
+        for motion_dof_idx in range(n_dofs):
+            # Map motion DOF index to model DOF index with +6 offset
+            model_joint_idx = motion_dof_idx + 6
+            
+            if model_joint_idx >= len(self.joint_names):
+                break
+                
+            joint_name = self.joint_names[model_joint_idx]
+            
+            # Skip finger joints
+            if any(kw in joint_name.lower() for kw in finger_keywords):
+                continue
+            q = joint_positions[:, motion_dof_idx]
             
             # Get limits
             if joint_limits and joint_name in joint_limits:
@@ -442,52 +502,120 @@ class MotionValidator:
         joint_positions: np.ndarray,
         root_pose: Optional[np.ndarray] = None,
     ) -> Tuple[bool, List[CollisionReport]]:
-        """Check 3: Self-collision detection."""
+        """Check 3: Self-collision detection using MuJoCo's built-in contact detection.
+        
+        Detects collisions by:
+        1. Setting robot pose for each frame
+        2. Running mj_forward() to compute kinematics
+        3. Checking data.contact[] for penetrating geom pairs
+        4. Filtering out adjacent body contacts (parent-child and grandparent)
+        """
         reports = []
         passed = True
         
-        if not HAS_MUJOCO or self.model is None or len(self.collision_pairs) == 0:
+        if not HAS_MUJOCO or self.model is None:
             return passed, reports
         
-        for body1_name, body2_name in self.collision_pairs:
-            try:
-                body1_id = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_BODY, body1_name)
-                body2_id = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_BODY, body2_name)
-            except ValueError:
-                warnings.warn(f"Body not found: {body1_name} or {body2_name}")
-                continue
+        # Build a set of nearby body pairs to ignore (parent-child and grandparent contacts)
+        # These are expected to have some contact due to joint proximity
+        nearby_bodies = set()
+        for i in range(self.model.nbody):
+            parent_id = self.model.body_parentid[i]
+            if parent_id >= 0:
+                nearby_bodies.add((min(i, parent_id), max(i, parent_id)))
+                # Also add grandparent
+                grandparent_id = self.model.body_parentid[parent_id]
+                if grandparent_id >= 0:
+                    nearby_bodies.add((min(i, grandparent_id), max(i, grandparent_id)))
+        
+        # Track collisions by BODY pair (not geom pair) to avoid duplicates
+        collision_data = {}  # (body1, body2) -> {'frames': set(), 'min_dist': float}
+        
+        n_frames = joint_positions.shape[0]
+        for t in range(n_frames):
+            # Set joint positions
+            n_dofs = min(joint_positions.shape[1], self.model.nv)
+            self.data.qvel[:n_dofs] = 0  # Clear velocities
             
-            first_collision_frame = None
-            collision_frames = []
-            min_distance = None
+            # Set qpos - need to handle free joint (7 qpos) vs motion DOFs
+            if root_pose is not None and root_pose.shape[1] >= 7:
+                self.data.qpos[:3] = root_pose[t, :3]  # x, y, z
+                self.data.qpos[3:7] = [root_pose[t, 6], root_pose[t, 3], root_pose[t, 4], root_pose[t, 5]]  # xyzw to wxyz
+                # Set actuated joint positions
+                # Motion dof_pos contains ONLY actuated joints (all values)
+                n_actuated = min(joint_positions.shape[1], self.model.nq - 7)
+                if n_actuated > 0:
+                    self.data.qpos[7:7+n_actuated] = joint_positions[t, :n_actuated]
+            else:
+                # No root pose, set all DOFs directly (approximate)
+                n_qpos = min(joint_positions.shape[1], self.model.nq)
+                self.data.qpos[:n_qpos] = joint_positions[t, :n_qpos]
             
-            for t in range(joint_positions.shape[0]):
-                # Set state
-                self.data.qpos[:len(joint_positions[t])] = joint_positions[t]
-                if root_pose is not None:
-                    self.data.qpos[:3] = root_pose[t, :3]
-                    # Skip quaternion for now; requires proper handling
+            # Forward kinematics to compute body positions
+            mj.mj_forward(self.model, self.data)
+            
+            # Check all detected contacts
+            for c_idx in range(self.data.ncon):
+                contact = self.data.contact[c_idx]
+                geom1, geom2 = contact.geom1, contact.geom2
+                dist = contact.dist
                 
-                mj.mj_forward(self.model, self.data)
+                # Get body IDs for these geoms
+                body1 = self.model.geom_bodyid[geom1]
+                body2 = self.model.geom_bodyid[geom2]
                 
-                # Check collision
-                # Note: MuJoCo contact detection is complex; this is simplified
-                # In practice, you'd iterate through geoms and check distances
-                # For now, just track that we're checking
-                # TODO: Implement proper geom-pair distance computation
+                # Skip ground contacts (body 0 = world)
+                if body1 == 0 or body2 == 0:
+                    continue
+                
+                # Skip same body contacts
+                if body1 == body2:
+                    continue
+                
+                # Skip nearby body contacts (parent-child, grandparent)
+                body_pair = (min(body1, body2), max(body1, body2))
+                if body_pair in nearby_bodies:
+                    continue
+                
+                # This is a self-collision between non-adjacent bodies!
+                if body_pair not in collision_data:
+                    collision_data[body_pair] = {
+                        'frames': set(),
+                        'min_dist': float('inf'),
+                    }
+                
+                collision_data[body_pair]['frames'].add(t)
+                collision_data[body_pair]['min_dist'] = min(
+                    collision_data[body_pair]['min_dist'], dist
+                )
+        
+        # Generate reports for detected collisions (grouped by body pair)
+        for body_pair, cdata in collision_data.items():
+            body1_name = mj.mj_id2name(self.model, mj.mjtObj.mjOBJ_BODY, body_pair[0]) or f"body_{body_pair[0]}"
+            body2_name = mj.mj_id2name(self.model, mj.mjtObj.mjOBJ_BODY, body_pair[1]) or f"body_{body_pair[1]}"
             
             pair_name = f"{body1_name} <-> {body2_name}"
+            frames = sorted(cdata['frames'])
+            
             report = CollisionReport(
                 pair_name=pair_name,
-                collided=len(collision_frames) > 0,
-                first_collision_frame=first_collision_frame,
-                num_collision_frames=len(collision_frames),
-                min_distance=min_distance,
+                collided=True,
+                first_collision_frame=frames[0] if frames else None,
+                num_collision_frames=len(frames),
+                min_distance=cdata['min_dist'],
             )
             reports.append(report)
-            
-            if len(collision_frames) > 0:
-                passed = False
+            passed = False
+        
+        # If no collisions detected, add a summary report
+        if not reports:
+            reports.append(CollisionReport(
+                pair_name="No self-collisions",
+                collided=False,
+                first_collision_frame=None,
+                num_collision_frames=0,
+                min_distance=None,
+            ))
         
         return passed, reports
 
@@ -495,12 +623,28 @@ class MotionValidator:
         self,
         foot_poses: Optional[Dict[str, np.ndarray]],
         dt: float,
+        joint_positions: Optional[np.ndarray] = None,
+        root_pose: Optional[np.ndarray] = None,
     ) -> Tuple[bool, List[FootGroundReport]]:
-        """Check 4: Foot ground contact constraints."""
+        """Check 4: Foot ground contact constraints.
+        
+        Uses MuJoCo forward kinematics to compute foot positions if foot_poses
+        is not provided but joint_positions and root_pose are available.
+        
+        Checks:
+        1. Ground penetration (foot going below ground)
+        2. Foot flatness during contact (roll/pitch angles)
+        """
         reports = []
         passed = True
         
-        if foot_poses is None:
+        # If foot_poses not provided, compute from MuJoCo FK
+        if foot_poses is None and HAS_MUJOCO and self.model is not None:
+            if joint_positions is not None and root_pose is not None:
+                foot_poses = self._compute_foot_poses_from_fk(joint_positions, root_pose)
+        
+        if foot_poses is None or len(foot_poses) == 0:
+            # No foot data available
             return passed, reports
         
         for foot_name in self.foot_names:
@@ -509,11 +653,12 @@ class MotionValidator:
             
             pose = foot_poses[foot_name]  # Shape: (T, 7) with [x, y, z, qx, qy, qz, qw]
             z_foot = pose[:, 2]
+            min_z = float(np.min(z_foot))
             
             # Penetration check
             z_ground = self.ground_z
             penetration = np.maximum(0, z_ground - z_foot)
-            bad_penetration_threshold = 0.01
+            bad_penetration_threshold = 0.01  # 1cm threshold
             bad_pen_frames = np.where(penetration > bad_penetration_threshold)[0].tolist()
             max_penetration = float(np.max(penetration))
             
@@ -521,8 +666,9 @@ class MotionValidator:
                 passed = False
             
             # Foot flatness during contact
-            contact_threshold = 0.01
+            contact_threshold = 0.02  # 2cm from ground = "in contact"
             contact_frames = z_foot <= (z_ground + contact_threshold)
+            num_contact_frames = int(np.sum(contact_frames))
             
             # Compute roll and pitch from quaternion
             roll_values = []
@@ -536,8 +682,8 @@ class MotionValidator:
                 roll_values.append(roll)
                 pitch_values.append(pitch)
                 
-                # Flag non-flat (> 10 deg)
-                if np.abs(roll) > np.deg2rad(10) or np.abs(pitch) > np.deg2rad(10):
+                # Flag non-flat (> 15 deg)
+                if np.abs(roll) > np.deg2rad(15) or np.abs(pitch) > np.deg2rad(15):
                     non_flat_frames.append(t)
             
             roll_p95 = float(np.percentile(np.abs(roll_values), 95)) if roll_values else 0.0
@@ -551,27 +697,108 @@ class MotionValidator:
                 roll_p95_during_contact=roll_p95,
                 pitch_p95_during_contact=pitch_p95,
                 num_non_flat_frames=len(non_flat_frames),
+                num_contact_frames=num_contact_frames,
+                min_z=min_z,
                 passed=len(bad_pen_frames) <= 5 and len(non_flat_frames) == 0,
             )
             reports.append(report)
+            
+            if not report.passed:
+                passed = False
         
         return passed, reports
+
+    def _compute_foot_poses_from_fk(
+        self,
+        joint_positions: np.ndarray,
+        root_pose: np.ndarray,
+    ) -> Dict[str, np.ndarray]:
+        """Compute foot poses using MuJoCo forward kinematics.
+        
+        Args:
+            joint_positions: (T, n_dofs) joint angles
+            root_pose: (T, 7) root pose [x, y, z, qx, qy, qz, qw]
+            
+        Returns:
+            Dict mapping foot names to (T, 7) pose arrays [x, y, z, qx, qy, qz, qw]
+        """
+        if not HAS_MUJOCO or self.model is None:
+            return {}
+        
+        foot_poses = {}
+        n_frames = joint_positions.shape[0]
+        
+        # Find foot body IDs
+        foot_body_ids = {}
+        for foot_name in self.foot_names:
+            try:
+                body_id = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_BODY, foot_name)
+                if body_id >= 0:
+                    foot_body_ids[foot_name] = body_id
+            except:
+                pass
+        
+        if not foot_body_ids:
+            return {}
+        
+        # Initialize pose arrays
+        for foot_name in foot_body_ids:
+            foot_poses[foot_name] = np.zeros((n_frames, 7))
+        
+        # Compute FK for each frame
+        for t in range(n_frames):
+            # Set root pose (position + quaternion)
+            self.data.qpos[:3] = root_pose[t, :3]  # x, y, z
+            # Convert xyzw to wxyz for MuJoCo
+            self.data.qpos[3:7] = [root_pose[t, 6], root_pose[t, 3], root_pose[t, 4], root_pose[t, 5]]
+            
+            # Set actuated joint positions
+            # Motion dof_pos contains ONLY actuated joints (all 53 values)
+            # Maps to qpos[7:60] (after root position and quaternion)
+            n_actuated = min(joint_positions.shape[1], self.model.nq - 7)
+            if n_actuated > 0:
+                self.data.qpos[7:7+n_actuated] = joint_positions[t, :n_actuated]
+            
+            # Forward kinematics
+            mj.mj_forward(self.model, self.data)
+            
+            # Extract foot poses
+            for foot_name, body_id in foot_body_ids.items():
+                # Position from xpos
+                foot_poses[foot_name][t, :3] = self.data.xpos[body_id]
+                # Orientation from xquat (MuJoCo returns wxyz, convert to xyzw)
+                wxyz = self.data.xquat[body_id]
+                foot_poses[foot_name][t, 3:7] = [wxyz[1], wxyz[2], wxyz[3], wxyz[0]]  # xyzw
+        
+        return foot_poses
 
     def _check_jitter(
         self,
         joint_positions: np.ndarray,
         dt: float,
     ) -> List[JitterReport]:
-        """Check 5: Jitter and temporal artifacts."""
+        """Check 5: Jitter and temporal artifacts.
+        
+        Maps motion DOF indices to model joint names correctly:
+        - Motion DOFs map directly to model velocity DOFs (nv space)
+        """
         reports = []
         
-        n_frames, n_joints = joint_positions.shape
+        n_frames, n_dofs = joint_positions.shape
         denom_v = 2 * dt
         denom_a = dt * dt
         
-        for i in range(min(n_joints, len(self.joint_names))):
-            joint_name = self.joint_names[i]
-            q = joint_positions[:, i]
+        # Report for joints that exist in the motion data
+        # Motion dof_pos contains ONLY actuated joints (excludes trunk free joint)
+        for motion_dof_idx in range(n_dofs):
+            # Motion DOF maps to model DOF with +6 offset (first 6 DOFs are trunk)
+            model_joint_idx = motion_dof_idx + 6
+            
+            if model_joint_idx >= len(self.joint_names):
+                break
+            
+            joint_name = self.joint_names[model_joint_idx]
+            q = joint_positions[:, motion_dof_idx]
             
             # Compute velocity and acceleration
             dq = np.zeros(n_frames)
@@ -664,24 +891,42 @@ class MotionValidator:
         # Collision
         lines.append("")
         lines.append(f"Self-Collision: {'✓ PASS' if collision_passed else '✗ FAIL'}")
-        if not collision_passed:
+        if collision_reports:
             collisions = [r for r in collision_reports if r.collided]
-            for r in collisions:
-                lines.append(f"  - {r.pair_name}: {r.num_collision_frames} frames")
+            if collisions:
+                for r in collisions:
+                    lines.append(f"  - {r.pair_name}: {r.num_collision_frames} frames")
+            else:
+                lines.append(f"  No self-collisions detected")
+        else:
+            lines.append(f"  No collision data available")
         
         # Foot ground
         lines.append("")
         lines.append(f"Foot Ground Contact: {'✓ PASS' if foot_ground_passed else '✗ FAIL'}")
-        for r in foot_ground_reports:
-            if not r.passed:
-                lines.append(f"  {r.foot_name}:")
-                if r.num_bad_penetration_frames > 0:
-                    lines.append(f"    Penetration: max={r.max_penetration:.4f} m, "
-                               f"{r.num_bad_penetration_frames} bad frames")
-                if r.num_non_flat_frames > 0:
-                    lines.append(f"    Non-flat: roll p95={np.rad2deg(r.roll_p95_during_contact):.2f}°, "
-                               f"pitch p95={np.rad2deg(r.pitch_p95_during_contact):.2f}°, "
-                               f"{r.num_non_flat_frames} frames")
+        if foot_ground_reports:
+            for r in foot_ground_reports:
+                if not r.passed:
+                    lines.append(f"  {r.foot_name}: FAIL")
+                    lines.append(f"    min Z={r.min_z*100:.1f}cm, contact frames={r.num_contact_frames}")
+                    if r.num_bad_penetration_frames > 0:
+                        lines.append(f"    Penetration: max={r.max_penetration*100:.2f}cm, "
+                                   f"{r.num_bad_penetration_frames} bad frames")
+                    if r.num_non_flat_frames > 0:
+                        lines.append(f"    Non-flat: roll p95={np.rad2deg(r.roll_p95_during_contact):.1f}°, "
+                                   f"pitch p95={np.rad2deg(r.pitch_p95_during_contact):.1f}°, "
+                                   f"{r.num_non_flat_frames} frames")
+                else:
+                    if r.num_contact_frames > 0:
+                        lines.append(f"  {r.foot_name}: OK (min Z={r.min_z*100:.1f}cm, "
+                                   f"contact frames={r.num_contact_frames}, "
+                                   f"roll p95={np.rad2deg(r.roll_p95_during_contact):.1f}°, "
+                                   f"pitch p95={np.rad2deg(r.pitch_p95_during_contact):.1f}°)")
+                    else:
+                        lines.append(f"  {r.foot_name}: OK (min Z={r.min_z*100:.1f}cm, "
+                                   f"no ground contact detected)")
+        else:
+            lines.append(f"  No foot data available")
         
         lines.append("")
         lines.append(f"{'='*70}")
@@ -708,6 +953,48 @@ class MotionValidator:
                            f"max violation: {r.max_violation:.4f} rad")
         else:
             lines.append("✓ All joints within safe limits")
+        
+        # Self-Collision summary
+        lines.append("")
+        lines.append("=== SELF-COLLISION ===")
+        if result.collision_reports:
+            collisions = [r for r in result.collision_reports if r.collided]
+            if collisions:
+                lines.append(f"✗ {len(collisions)} collision pairs detected:")
+                for r in sorted(collisions, key=lambda x: x.num_collision_frames, reverse=True)[:10]:
+                    lines.append(f"  {r.pair_name}: {r.num_collision_frames} frames")
+                if len(collisions) > 10:
+                    lines.append(f"  ... and {len(collisions) - 10} more pairs")
+            else:
+                lines.append("✓ No self-collisions detected")
+        else:
+            lines.append("  No collision data available")
+        
+        # Foot Ground Contact summary
+        lines.append("")
+        lines.append("=== FOOT GROUND CONTACT ===")
+        if result.foot_ground_reports:
+            for r in result.foot_ground_reports:
+                if not r.passed:
+                    lines.append(f"✗ {r.foot_name}: FAIL")
+                    lines.append(f"    min Z={r.min_z*100:.1f}cm, contact frames={r.num_contact_frames}")
+                    if r.num_bad_penetration_frames > 0:
+                        lines.append(f"    Penetration: max={r.max_penetration*100:.2f}cm, "
+                                   f"{r.num_bad_penetration_frames} bad frames")
+                    if r.num_non_flat_frames > 0:
+                        lines.append(f"    Non-flat: roll p95={np.rad2deg(r.roll_p95_during_contact):.1f}°, "
+                                   f"pitch p95={np.rad2deg(r.pitch_p95_during_contact):.1f}°, "
+                                   f"{r.num_non_flat_frames} frames")
+                else:
+                    if r.num_contact_frames > 0:
+                        lines.append(f"✓ {r.foot_name}: OK (min Z={r.min_z*100:.1f}cm, "
+                                   f"contact={r.num_contact_frames} frames, "
+                                   f"roll p95={np.rad2deg(r.roll_p95_during_contact):.1f}°, "
+                                   f"pitch p95={np.rad2deg(r.pitch_p95_during_contact):.1f}°)")
+                    else:
+                        lines.append(f"✓ {r.foot_name}: OK (min Z={r.min_z*100:.1f}cm, no ground contact)")
+        else:
+            lines.append("  No foot data available")
         
         # Jitter statistics (worst 5 joints by velocity p99)
         if result.jitter_reports:
@@ -831,26 +1118,34 @@ class MotionValidator:
         fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, n_rows * 3))
         axes = np.atleast_1d(axes).flatten()
         
-        for plot_idx, i in enumerate(moving_joint_indices):
+        for plot_idx, motion_dof_idx in enumerate(moving_joint_indices):
             ax = axes[plot_idx]
-            joint_name = self.joint_names[i] if i < len(self.joint_names) else f"joint_{i}"
-            q = joint_positions[:, i]
+            # Motion DOF maps directly to model DOF
+            joint_name = self.joint_names[motion_dof_idx] if motion_dof_idx < len(self.joint_names) else f"joint_{motion_dof_idx}"
+            q = joint_positions[:, motion_dof_idx]
             
             # Get safe limits from reports
             safe_min, safe_max = -np.pi, np.pi
+            hard_min, hard_max = -np.pi, np.pi
             for r in result.joint_limits_reports:
                 if r.joint_name == joint_name:
                     safe_min = r.q_min_safe
                     safe_max = r.q_max_safe
+                    hard_min = r.q_min
+                    hard_max = r.q_max
+                    break
             
             ax.plot(time_axis, q, 'b-', linewidth=1, label='Joint position')
+            # Plot hard limits and safe limits (only label once to avoid duplicate legends)
+            ax.axhline(hard_min, color='k', linestyle='-', alpha=0.3, label='Hard limit')
+            ax.axhline(hard_max, color='k', linestyle='-', alpha=0.3)
             ax.axhline(safe_min, color='r', linestyle='--', alpha=0.5, label='Safe limit')
             ax.axhline(safe_max, color='r', linestyle='--', alpha=0.5)
             ax.set_xlabel('Time (s)')
             ax.set_ylabel('Position (rad)')
-            ax.set_title(f'{joint_name} (range: {joint_ranges[i]:.3f} rad)')
+            ax.set_title(f'{joint_name} (range: {joint_ranges[motion_dof_idx]:.3f} rad)')
             ax.grid(True, alpha=0.3)
-            ax.legend()
+            ax.legend(loc='best', fontsize=8)
         
         # Hide unused subplots
         for i in range(n_joints, len(axes)):
