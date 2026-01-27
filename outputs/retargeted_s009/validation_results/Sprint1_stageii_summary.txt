@@ -1,0 +1,14 @@
+=== VALIDATION SUMMARY ===
+Clip: Sprint1_stageii
+Duration: 2.21s (66 frames @ 29.9 Hz)
+Status: ✓ PASS
+
+=== JOINT LIMITS ===
+✓ All joints within safe limits
+
+=== JITTER STATISTICS (Worst 5 joints) ===
+right_little_1_joint           vel_p99=  11.619 acc_p99=  318.22
+Left_Knee_Pitch                vel_p99=  11.436 acc_p99=  260.94
+right_little_2_joint           vel_p99=  10.388 acc_p99=  214.78
+Trunk                          vel_p99=   8.935 acc_p99=  180.04
+Left_Ankle_Pitch               vel_p99=   8.416 acc_p99=  224.97
