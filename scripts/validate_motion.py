@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script for validating GMR retargeted motions.
+Example script for validating GMR retargeted motions.
 
 Usage:
     python validate_motion.py --motion motion.pkl --robot unitree_g1 --output results/
@@ -167,6 +167,7 @@ def validate_motion(
         robot_xml=str(xml_path),
         keypoint_map=config['keypoint_map'],
         collision_pairs=config['collision_pairs'],
+        collision_groups=config.get('collision_groups'),
         foot_names=config['foot_names'],
         ground_z=0.0,
         verbose=verbose,
