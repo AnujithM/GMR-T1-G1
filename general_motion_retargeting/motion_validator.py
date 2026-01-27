@@ -810,16 +810,23 @@ class MotionValidator:
         n_frames = joint_positions.shape[0]
         time_axis = np.arange(n_frames) / result.fps
         
-        # Plot 1: Joint positions with safe limits
+        # Plot 1: Joint positions with safe
         n_cols = 3
-        n_joints = min(6, joint_positions.shape[1])
+        skip_trunk = 6  # Skip first 6 trunk DOFs
+        selected_indices = list(range(skip_trunk, min(skip_trunk + 12, joint_positions.shape[1])))
+        
+        if not selected_indices:
+            # Fallback to first 6 if not enough joints
+            selected_indices = list(range(min(6, joint_positions.shape[1])))
+        
+        n_joints = len(selected_indices)
         n_rows = (n_joints + n_cols - 1) // n_cols
         
         fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, n_rows * 3))
         axes = np.atleast_1d(axes).flatten()
         
-        for i in range(n_joints):
-            ax = axes[i]
+        for plot_idx, i in enumerate(selected_indices):
+            ax = axes[plot_idx]
             joint_name = self.joint_names[i] if i < len(self.joint_names) else f"joint_{i}"
             q = joint_positions[:, i]
             
