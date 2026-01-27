@@ -1,7 +1,0 @@
-=== VALIDATION SUMMARY ===
-Clip: QkWalk1_stageii
-Duration: 2.56s (76 frames @ 29.7 Hz)
-Status: ✓ PASS
-
-=== JOINT LIMITS ===
-✓ All joints within safe limits
