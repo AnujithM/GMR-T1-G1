@@ -810,22 +810,28 @@ class MotionValidator:
         n_frames = joint_positions.shape[0]
         time_axis = np.arange(n_frames) / result.fps
         
-        # Plot 1: Joint positions with safe
+        # Plot 1: Joint positions with safe limits
+        # Detect moving joints (joints with significant range of motion)
+        joint_ranges = np.ptp(joint_positions, axis=0)  # Peak-to-peak (max - min)
+        motion_threshold = 0.01  # rad
+        moving_joint_indices = np.where(joint_ranges > motion_threshold)[0]
+        
+        if len(moving_joint_indices) == 0:
+            # If no moving joints detected, show first 6
+            moving_joint_indices = np.arange(min(6, joint_positions.shape[1]))
+        elif len(moving_joint_indices) > 12:
+            # Limit to 12 most moving joints
+            top_indices = np.argsort(joint_ranges[moving_joint_indices])[-12:]
+            moving_joint_indices = moving_joint_indices[top_indices]
+        
         n_cols = 3
-        skip_trunk = 6  # Skip first 6 trunk DOFs
-        selected_indices = list(range(skip_trunk, min(skip_trunk + 12, joint_positions.shape[1])))
-        
-        if not selected_indices:
-            # Fallback to first 6 if not enough joints
-            selected_indices = list(range(min(6, joint_positions.shape[1])))
-        
-        n_joints = len(selected_indices)
+        n_joints = len(moving_joint_indices)
         n_rows = (n_joints + n_cols - 1) // n_cols
         
         fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, n_rows * 3))
         axes = np.atleast_1d(axes).flatten()
         
-        for plot_idx, i in enumerate(selected_indices):
+        for plot_idx, i in enumerate(moving_joint_indices):
             ax = axes[plot_idx]
             joint_name = self.joint_names[i] if i < len(self.joint_names) else f"joint_{i}"
             q = joint_positions[:, i]
@@ -842,7 +848,7 @@ class MotionValidator:
             ax.axhline(safe_max, color='r', linestyle='--', alpha=0.5)
             ax.set_xlabel('Time (s)')
             ax.set_ylabel('Position (rad)')
-            ax.set_title(joint_name)
+            ax.set_title(f'{joint_name} (range: {joint_ranges[i]:.3f} rad)')
             ax.grid(True, alpha=0.3)
             ax.legend()
         
