@@ -166,7 +166,7 @@ FOOT_NAMES = {
     'unitree_g1': ['left_foot', 'right_foot'],
     'unitree_h1': ['left_foot', 'right_foot'],
     'booster_t1': ['LeftFoot', 'RightFoot'],
-    'booster_t1_29dof_inspire_custom': ['LeftFoot', 'RightFoot'],
+    'booster_t1_29dof_inspire_custom': ['left_foot_link', 'right_foot_link'],
 }
 
 # Robot XML file paths and joint names
