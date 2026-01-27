@@ -113,9 +113,18 @@ class JitterReport:
     vel_p99: float
     acc_p95: float
     acc_p99: float
+    vel_spike_frames: List[int]  # Frame indices with biggest velocity spikes
+    acc_spike_frames: List[int]  # Frame indices with biggest acceleration spikes
 
     def to_dict(self):
-        return asdict(self)
+        d = asdict(self)
+        d['vel_spike_frames'] = str(d['vel_spike_frames'][:5]) + \
+                               (f" ... +{len(d['vel_spike_frames'])-5} more" 
+                                if len(d['vel_spike_frames']) > 5 else "")
+        d['acc_spike_frames'] = str(d['acc_spike_frames'][:5]) + \
+                               (f" ... +{len(d['acc_spike_frames'])-5} more" 
+                                if len(d['acc_spike_frames']) > 5 else "")
+        return d
 
 
 @dataclass
@@ -173,6 +182,7 @@ class MotionValidator:
         joint_names: Optional[List[str]] = None,
         keypoint_map: Optional[Dict[str, str]] = None,
         collision_pairs: Optional[List[Tuple[str, str]]] = None,
+        collision_groups: Optional[Dict] = None,
         foot_names: Optional[List[str]] = None,
         ground_z: float = 0.0,
         verbose: bool = True,
@@ -184,7 +194,11 @@ class MotionValidator:
             robot_xml: Path to MuJoCo XML file
             joint_names: List of joint names in order (if None, will be auto-detected)
             keypoint_map: Dict mapping keypoint names to body names
-            collision_pairs: List of (body1, body2) tuples for collision checking
+            collision_pairs: List of (body1, body2) tuples for collision checking (legacy)
+            collision_groups: Dict with Kheiron-style collision groups config:
+                - body_to_group: mapping of body names to group names
+                - group_pairs: list of (group1, group2) pairs to check
+                - skip_pairs: list of body pairs to skip
             foot_names: List of foot body names for ground contact checking
             ground_z: Height of ground plane (default 0.0)
             verbose: Print verbose output
@@ -225,12 +239,15 @@ class MotionValidator:
         }
         
         self.collision_pairs = collision_pairs or []
+        self.collision_groups = collision_groups
         self.foot_names = foot_names or ['left_foot', 'right_foot']
         
         if self.verbose:
             print(f"[Validator] Initialized with {len(self.joint_names)} joints")
             print(f"[Validator] Keypoints: {list(self.keypoint_map.keys())}")
             print(f"[Validator] Feet: {self.foot_names}")
+            if collision_groups:
+                print(f"[Validator] Using Kheiron-style collision groups: {len(collision_groups.get('group_pairs', []))} group pairs")
 
     def get_joint_limits_from_model(self) -> Dict[str, Tuple[float, float]]:
         """
@@ -303,9 +320,9 @@ class MotionValidator:
                 root_pose, foot_poses, target_keypoints
             )
         
-        # Check 3: Self collision
+        # Check 3: Self collision (using Kheiron-style groups if available)
         collision_passed, collision_reports = self._check_collisions(
-            joint_positions, root_pose
+            joint_positions, root_pose, self.collision_groups
         )
         
         # Check 4: Foot ground contact (uses MuJoCo FK if foot_poses not provided)
@@ -501,14 +518,19 @@ class MotionValidator:
         self,
         joint_positions: np.ndarray,
         root_pose: Optional[np.ndarray] = None,
+        collision_groups: Optional[Dict] = None,
     ) -> Tuple[bool, List[CollisionReport]]:
-        """Check 3: Self-collision detection using MuJoCo's built-in contact detection.
+        """Check 3: Self-collision detection using Kheiron-style group-based approach.
         
-        Detects collisions by:
-        1. Setting robot pose for each frame
-        2. Running mj_forward() to compute kinematics
-        3. Checking data.contact[] for penetrating geom pairs
-        4. Filtering out adjacent body contacts (parent-child and grandparent)
+        Uses collision groups to define which body groups should be checked:
+        - forearm L/R vs upper arm R/L (cross-body)
+        - forearm L/R vs forearm R/L
+        - forearm vs torso
+        - forearm vs head
+        - forearm vs legs
+        - leg vs leg
+        
+        Falls back to generic adjacent-body filtering if no groups defined.
         """
         reports = []
         passed = True
@@ -516,42 +538,67 @@ class MotionValidator:
         if not HAS_MUJOCO or self.model is None:
             return passed, reports
         
-        # Build a set of nearby body pairs to ignore (parent-child and grandparent contacts)
-        # These are expected to have some contact due to joint proximity
-        nearby_bodies = set()
+        # Build body name to ID mapping
+        body_name_to_id = {}
+        body_id_to_name = {}
         for i in range(self.model.nbody):
-            parent_id = self.model.body_parentid[i]
-            if parent_id >= 0:
-                nearby_bodies.add((min(i, parent_id), max(i, parent_id)))
-                # Also add grandparent
-                grandparent_id = self.model.body_parentid[parent_id]
-                if grandparent_id >= 0:
-                    nearby_bodies.add((min(i, grandparent_id), max(i, grandparent_id)))
+            name = mj.mj_id2name(self.model, mj.mjtObj.mjOBJ_BODY, i)
+            if name:
+                body_name_to_id[name] = i
+                body_id_to_name[i] = name
         
-        # Track collisions by BODY pair (not geom pair) to avoid duplicates
+        # Build group-based collision checking if groups provided
+        use_groups = collision_groups is not None and 'body_to_group' in collision_groups
+        
+        if use_groups:
+            body_to_group = collision_groups['body_to_group']
+            group_pairs = set(collision_groups.get('group_pairs', []))
+            skip_pairs = set(tuple(p) for p in collision_groups.get('skip_pairs', []))
+            
+            # Build body ID to group mapping
+            body_id_to_group = {}
+            for body_name, group in body_to_group.items():
+                if body_name in body_name_to_id:
+                    body_id_to_group[body_name_to_id[body_name]] = group
+            
+            # Build skip pairs as body ID pairs
+            skip_body_pairs = set()
+            for b1, b2 in skip_pairs:
+                if b1 in body_name_to_id and b2 in body_name_to_id:
+                    id1, id2 = body_name_to_id[b1], body_name_to_id[b2]
+                    skip_body_pairs.add((min(id1, id2), max(id1, id2)))
+        else:
+            # Fallback: Build a set of nearby body pairs to ignore
+            nearby_bodies = set()
+            for i in range(self.model.nbody):
+                parent_id = self.model.body_parentid[i]
+                if parent_id >= 0:
+                    nearby_bodies.add((min(i, parent_id), max(i, parent_id)))
+                    grandparent_id = self.model.body_parentid[parent_id]
+                    if grandparent_id >= 0:
+                        nearby_bodies.add((min(i, grandparent_id), max(i, grandparent_id)))
+        
+        # Track collisions by BODY pair
         collision_data = {}  # (body1, body2) -> {'frames': set(), 'min_dist': float}
         
         n_frames = joint_positions.shape[0]
         for t in range(n_frames):
             # Set joint positions
             n_dofs = min(joint_positions.shape[1], self.model.nv)
-            self.data.qvel[:n_dofs] = 0  # Clear velocities
+            self.data.qvel[:n_dofs] = 0
             
-            # Set qpos - need to handle free joint (7 qpos) vs motion DOFs
+            # Set qpos
             if root_pose is not None and root_pose.shape[1] >= 7:
-                self.data.qpos[:3] = root_pose[t, :3]  # x, y, z
-                self.data.qpos[3:7] = [root_pose[t, 6], root_pose[t, 3], root_pose[t, 4], root_pose[t, 5]]  # xyzw to wxyz
-                # Set actuated joint positions
-                # Motion dof_pos contains ONLY actuated joints (all values)
+                self.data.qpos[:3] = root_pose[t, :3]
+                self.data.qpos[3:7] = [root_pose[t, 6], root_pose[t, 3], root_pose[t, 4], root_pose[t, 5]]
                 n_actuated = min(joint_positions.shape[1], self.model.nq - 7)
                 if n_actuated > 0:
                     self.data.qpos[7:7+n_actuated] = joint_positions[t, :n_actuated]
             else:
-                # No root pose, set all DOFs directly (approximate)
                 n_qpos = min(joint_positions.shape[1], self.model.nq)
                 self.data.qpos[:n_qpos] = joint_positions[t, :n_qpos]
             
-            # Forward kinematics to compute body positions
+            # Forward kinematics
             mj.mj_forward(self.model, self.data)
             
             # Check all detected contacts
@@ -560,7 +607,6 @@ class MotionValidator:
                 geom1, geom2 = contact.geom1, contact.geom2
                 dist = contact.dist
                 
-                # Get body IDs for these geoms
                 body1 = self.model.geom_bodyid[geom1]
                 body2 = self.model.geom_bodyid[geom2]
                 
@@ -572,12 +618,38 @@ class MotionValidator:
                 if body1 == body2:
                     continue
                 
-                # Skip nearby body contacts (parent-child, grandparent)
                 body_pair = (min(body1, body2), max(body1, body2))
-                if body_pair in nearby_bodies:
-                    continue
                 
-                # This is a self-collision between non-adjacent bodies!
+                if use_groups:
+                    # Group-based filtering
+                    # Skip if pair is in skip list
+                    if body_pair in skip_body_pairs:
+                        continue
+                    
+                    # Get groups for both bodies
+                    group1 = body_id_to_group.get(body1)
+                    group2 = body_id_to_group.get(body2)
+                    
+                    # Skip if either body not in a group
+                    if group1 is None or group2 is None:
+                        continue
+                    
+                    # Skip if same group (intra-group collisions allowed)
+                    if group1 == group2:
+                        continue
+                    
+                    # Check if this group pair should be monitored
+                    group_pair = (group1, group2) if group1 < group2 else (group2, group1)
+                    group_pair_rev = (group2, group1) if group1 < group2 else (group1, group2)
+                    
+                    if group_pair not in group_pairs and group_pair_rev not in group_pairs:
+                        continue
+                else:
+                    # Fallback: skip nearby bodies
+                    if body_pair in nearby_bodies:
+                        continue
+                
+                # This is a collision we care about!
                 if body_pair not in collision_data:
                     collision_data[body_pair] = {
                         'frames': set(),
@@ -589,10 +661,10 @@ class MotionValidator:
                     collision_data[body_pair]['min_dist'], dist
                 )
         
-        # Generate reports for detected collisions (grouped by body pair)
+        # Generate reports
         for body_pair, cdata in collision_data.items():
-            body1_name = mj.mj_id2name(self.model, mj.mjtObj.mjOBJ_BODY, body_pair[0]) or f"body_{body_pair[0]}"
-            body2_name = mj.mj_id2name(self.model, mj.mjtObj.mjOBJ_BODY, body_pair[1]) or f"body_{body_pair[1]}"
+            body1_name = body_id_to_name.get(body_pair[0], f"body_{body_pair[0]}")
+            body2_name = body_id_to_name.get(body_pair[1], f"body_{body_pair[1]}")
             
             pair_name = f"{body1_name} <-> {body2_name}"
             frames = sorted(cdata['frames'])
@@ -606,16 +678,6 @@ class MotionValidator:
             )
             reports.append(report)
             passed = False
-        
-        # If no collisions detected, add a summary report
-        if not reports:
-            reports.append(CollisionReport(
-                pair_name="No self-collisions",
-                collided=False,
-                first_collision_frame=None,
-                num_collision_frames=0,
-                min_distance=None,
-            ))
         
         return passed, reports
 
@@ -665,8 +727,8 @@ class MotionValidator:
             if len(bad_pen_frames) > 5:  # More than a handful
                 passed = False
             
-            # Foot flatness during contact
-            contact_threshold = 0.02  # 2cm from ground = "in contact"
+            # Foot flatness during contact (per spec: contact = 1cm from ground)
+            contact_threshold = 0.01  # 1cm from ground = "in contact"
             contact_frames = z_foot <= (z_ground + contact_threshold)
             num_contact_frames = int(np.sum(contact_frames))
             
@@ -682,8 +744,8 @@ class MotionValidator:
                 roll_values.append(roll)
                 pitch_values.append(pitch)
                 
-                # Flag non-flat (> 15 deg)
-                if np.abs(roll) > np.deg2rad(15) or np.abs(pitch) > np.deg2rad(15):
+                # Flag non-flat (per spec: > 10 deg)
+                if np.abs(roll) > np.deg2rad(10) or np.abs(pitch) > np.deg2rad(10):
                     non_flat_frames.append(t)
             
             roll_p95 = float(np.percentile(np.abs(roll_values), 95)) if roll_values else 0.0
@@ -817,12 +879,25 @@ class MotionValidator:
             acc_p95 = float(np.percentile(np.abs(ddq[1:-1]), 95))
             acc_p99 = float(np.percentile(np.abs(ddq[1:-1]), 99))
             
+            # Find frames with biggest spikes (velocity and acceleration)
+            # Get indices of frames in top 5% for velocity spikes
+            abs_dq = np.abs(dq[1:-1])
+            vel_threshold = np.percentile(abs_dq, 95)
+            vel_spike_frames = [int(i+1) for i in range(len(abs_dq)) if abs_dq[i] >= vel_threshold]
+            
+            # Get indices of frames in top 5% for acceleration spikes
+            abs_ddq = np.abs(ddq[1:-1])
+            acc_threshold = np.percentile(abs_ddq, 95)
+            acc_spike_frames = [int(i+1) for i in range(len(abs_ddq)) if abs_ddq[i] >= acc_threshold]
+            
             report = JitterReport(
                 joint_name=joint_name,
                 vel_p95=vel_p95,
                 vel_p99=vel_p99,
                 acc_p95=acc_p95,
                 acc_p99=acc_p99,
+                vel_spike_frames=vel_spike_frames,
+                acc_spike_frames=acc_spike_frames,
             )
             reports.append(report)
         
@@ -1005,6 +1080,16 @@ class MotionValidator:
                                  reverse=True)[:5]
             for j in worst_joints:
                 lines.append(f"{j.joint_name:30} vel_p99={j.vel_p99:8.3f} acc_p99={j.acc_p99:8.2f}")
+                if j.vel_spike_frames:
+                    spike_str = str(j.vel_spike_frames[:5])
+                    if len(j.vel_spike_frames) > 5:
+                        spike_str = spike_str[:-1] + f", ... +{len(j.vel_spike_frames)-5} more]"
+                    lines.append(f"  Velocity spikes at frames: {spike_str}")
+                if j.acc_spike_frames:
+                    spike_str = str(j.acc_spike_frames[:5])
+                    if len(j.acc_spike_frames) > 5:
+                        spike_str = spike_str[:-1] + f", ... +{len(j.acc_spike_frames)-5} more]"
+                    lines.append(f"  Acceleration spikes at frames: {spike_str}")
         
         return "\n".join(lines)
 
@@ -1071,12 +1156,14 @@ class MotionValidator:
         if result.jitter_reports:
             csv_file = output_dir / f"{result.clip_name}_jitter.csv"
             with open(csv_file, 'w', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=[
-                    'joint_name', 'vel_p95', 'vel_p99', 'acc_p95', 'acc_p99'
-                ])
+                fieldnames = ['joint_name', 'vel_p95', 'vel_p99', 'acc_p95', 'acc_p99', 'vel_spike_frames', 'acc_spike_frames']
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
                 for r in result.jitter_reports:
-                    writer.writerow(r.to_dict())
+                    d = r.to_dict()
+                    # Keep only fieldnames that are in the CSV
+                    writer.writerow({k: v for k, v in d.items() 
+                                   if k in fieldnames})
             if self.verbose:
                 print(f"[Validator] Saved jitter CSV: {csv_file}")
 
