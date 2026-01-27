@@ -161,6 +161,110 @@ COLLISION_PAIRS = {
     ],
 }
 
+# ============================================================================
+# COLLISION GROUPS (Kheiron-style group-based collision detection)
+# ============================================================================
+# Define body groups and which group pairs should be checked for collisions.
+# This is more targeted than checking all body pairs.
+
+COLLISION_GROUPS = {
+    'booster_t1_29dof_inspire_custom': {
+        # Body name -> Group name mapping
+        'body_to_group': {
+            # Head
+            'H1': 'head',
+            'H2': 'head',
+            # Torso
+            'Trunk': 'torso',
+            'Waist': 'torso',
+            # Upper Arm Left (first cylinder out of torso)
+            'AL1': 'upper_arm_L',
+            # Upper Arm Right
+            'AR1': 'upper_arm_R',
+            # Forearm Left (includes hand and fingers)
+            'AL2': 'forearm_L',
+            'AL3': 'forearm_L',
+            'AL4': 'forearm_L',
+            'AL5': 'forearm_L',
+            'AL6': 'forearm_L',
+            'left_hand_link': 'forearm_L',
+            'left_thumb_1': 'forearm_L',
+            'left_thumb_2': 'forearm_L',
+            'left_thumb_3': 'forearm_L',
+            'left_thumb_4': 'forearm_L',
+            'left_index_1': 'forearm_L',
+            'left_index_2': 'forearm_L',
+            'left_middle_1': 'forearm_L',
+            'left_middle_2': 'forearm_L',
+            'left_ring_1': 'forearm_L',
+            'left_ring_2': 'forearm_L',
+            'left_little_1': 'forearm_L',
+            'left_little_2': 'forearm_L',
+            # Forearm Right (includes hand and fingers)
+            'AR2': 'forearm_R',
+            'AR3': 'forearm_R',
+            'AR4': 'forearm_R',
+            'AR5': 'forearm_R',
+            'AR6': 'forearm_R',
+            'right_hand_link': 'forearm_R',
+            'right_thumb_1': 'forearm_R',
+            'right_thumb_2': 'forearm_R',
+            'right_thumb_3': 'forearm_R',
+            'right_thumb_4': 'forearm_R',
+            'right_index_1': 'forearm_R',
+            'right_index_2': 'forearm_R',
+            'right_middle_1': 'forearm_R',
+            'right_middle_2': 'forearm_R',
+            'right_ring_1': 'forearm_R',
+            'right_ring_2': 'forearm_R',
+            'right_little_1': 'forearm_R',
+            'right_little_2': 'forearm_R',
+            # Leg Left
+            'Hip_Pitch_Left': 'leg_L',
+            'Hip_Roll_Left': 'leg_L',
+            'Hip_Yaw_Left': 'leg_L',
+            'Shank_Left': 'leg_L',
+            'Ankle_Cross_Left': 'leg_L',
+            'left_foot_link': 'leg_L',
+            # Leg Right
+            'Hip_Pitch_Right': 'leg_R',
+            'Hip_Roll_Right': 'leg_R',
+            'Hip_Yaw_Right': 'leg_R',
+            'Shank_Right': 'leg_R',
+            'Ankle_Cross_Right': 'leg_R',
+            'right_foot_link': 'leg_R',
+        },
+        # Group pairs to check for collisions
+        # Format: (group1, group2)
+        'group_pairs': [
+            # Forearm vs opposite upper arm (cross-body)
+            ('forearm_L', 'upper_arm_R'),
+            ('forearm_R', 'upper_arm_L'),
+            # Forearm vs forearm (both arms)
+            ('forearm_L', 'forearm_R'),
+            # Forearm vs torso
+            ('forearm_L', 'torso'),
+            ('forearm_R', 'torso'),
+            # Forearm vs head
+            ('forearm_L', 'head'),
+            ('forearm_R', 'head'),
+            # Forearm vs legs
+            ('forearm_L', 'leg_L'),
+            ('forearm_L', 'leg_R'),
+            ('forearm_R', 'leg_L'),
+            ('forearm_R', 'leg_R'),
+            # Leg vs leg (feet collision)
+            ('leg_L', 'leg_R'),
+        ],
+        # Bodies to skip when checking upper_arm vs torso
+        # (to avoid false positives at shoulder joint)
+        'skip_pairs': [
+            ('AL1', 'Trunk'),  # Upper arm attached to trunk
+            ('AR1', 'Trunk'),
+        ],
+    },
+}
+
 # Foot body names for each robot
 FOOT_NAMES = {
     'unitree_g1': ['left_foot', 'right_foot'],
@@ -176,6 +280,7 @@ ROBOT_CONFIGS = {
         'joint_limits': UNITREE_G1_LIMITS,
         'keypoint_map': KEYPOINT_MAPS['unitree_g1'],
         'collision_pairs': COLLISION_PAIRS['unitree_g1'],
+        'collision_groups': None,  # No group config yet
         'foot_names': FOOT_NAMES['unitree_g1'],
     },
     'unitree_h1': {
@@ -183,6 +288,7 @@ ROBOT_CONFIGS = {
         'joint_limits': UNITREE_H1_LIMITS,
         'keypoint_map': KEYPOINT_MAPS['unitree_h1'],
         'collision_pairs': COLLISION_PAIRS['unitree_h1'],
+        'collision_groups': None,  # No group config yet
         'foot_names': FOOT_NAMES['unitree_h1'],
     },
     'booster_t1': {
@@ -190,6 +296,7 @@ ROBOT_CONFIGS = {
         'joint_limits': BOOSTER_T1_LIMITS,
         'keypoint_map': KEYPOINT_MAPS['booster_t1'],
         'collision_pairs': COLLISION_PAIRS['booster_t1'],
+        'collision_groups': None,  # No group config yet
         'foot_names': FOOT_NAMES['booster_t1'],
     },
     'booster_t1_29dof_inspire_custom': {
@@ -197,6 +304,7 @@ ROBOT_CONFIGS = {
         'joint_limits': BOOSTER_T1_29DOF_INSPIRE_LIMITS,
         'keypoint_map': KEYPOINT_MAPS['booster_t1_29dof_inspire_custom'],
         'collision_pairs': COLLISION_PAIRS['booster_t1_29dof_inspire_custom'],
+        'collision_groups': COLLISION_GROUPS.get('booster_t1_29dof_inspire_custom'),
         'foot_names': FOOT_NAMES['booster_t1_29dof_inspire_custom'],
     },
 }
