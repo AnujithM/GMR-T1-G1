@@ -119,48 +119,7 @@ Left_Ankle_Pitch               vel_p99=8.416 acc_p99=224.97
 --keypoints KEYPOINTS        Path to target keypoints (CSV or NPZ)
 --output OUTPUT              Output directory (default: validation_output)
 --plots                      Generate diagnostic plots
---quiet                      Suppress verbose output
-```
 
-## Programmatic Usage
-
-```python
-from motion_validator import MotionValidator
-from validation_config import get_robot_config
-import numpy as np
-
-# Get robot config
-config = get_robot_config('booster_t1_29dof_inspire_custom')
-
-# Create validator
-validator = MotionValidator(
-    robot_xml='assets/booster_t1_29dof_inspire_custom/robot.xml',
-    keypoint_map=config['keypoint_map'],
-    collision_pairs=config['collision_pairs'],
-    foot_names=config['foot_names'],
-    verbose=True,
-)
-
-# Load motion data
-motion_data = np.load('motion.pkl')
-joint_positions = motion_data['dof_pos']  # (T, n_joints)
-root_pose = motion_data['root_pos']       # (T, 7)
-
-# Run validation
-result = validator.validate(
-    motion_file='motion.pkl',
-    joint_positions=joint_positions,
-    root_pose=root_pose,
-    fps=30.0,
-    joint_limits=config['joint_limits'],
-)
-
-# Save reports
-validator.save_reports(result, output_dir='results/')
-
-# Access results
-print(f"All checks passed: {result.all_passed}")
-print(f"Joint limits OK: {result.joint_limits_passed}")
 ```
 
 ## Interpretation
@@ -186,25 +145,6 @@ print(f"Joint limits OK: {result.joint_limits_passed}")
 - Lower values: Smoother motion
 - vel_p99 < 5 rad/s: Smooth
 - vel_p99 > 10 rad/s: Dynamic/aggressive motion
-
-## Troubleshooting
-
-### "Robot XML not found"
-- Check robot name spelling
-- Verify assets directory exists
-- Use absolute path if needed
-
-### "No .pkl files found"
-- Check directory path
-- Ensure motion files have .pkl extension
-
-### MuJoCo warnings
-- Optional; collision detection will be skipped
-- Install with: `pip install mujoco`
-
-### Matplotlib warnings
-- Optional; plots will be skipped
-- Install with: `pip install matplotlib`
 
 ## See Also
 
