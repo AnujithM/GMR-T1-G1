@@ -171,11 +171,13 @@ def process_file(smplx_file_path, tgt_file_path, tgt_robot, SMPLX_FOLDER, tgt_fo
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--robot", default="unitree_g1")
-    parser.add_argument("--src_folder", type=str,
+    parser.add_argument("--dataset_path", type=str,
                         required=True,
+                        help="Path to the source SMPLX dataset folder"
                         )
-    parser.add_argument("--tgt_folder", type=str,
+    parser.add_argument("--save_path", type=str,
                         required=True,
+                        help="Path to the output directory for retargeted motion"
                         )
     
     parser.add_argument("--override", default=False, action="store_true")
@@ -186,8 +188,8 @@ def main():
     print(f"Total CPUs: {mp.cpu_count()}")
     print(f"Using {args.num_cpus} CPUs.")
     
-    src_folder = args.src_folder
-    tgt_folder = args.tgt_folder
+    src_folder = args.dataset_path
+    tgt_folder = args.save_path
 
     SMPLX_FOLDER = HERE / ".." / "assets" / "body_models"
     hard_motions_folder = HERE / ".." / "assets" / "hard_motions"
