@@ -66,15 +66,16 @@ Retargeted motions are saved as `.pkl` files containing:
 - `fps`: 30
 - `root_pos`: Root position (N, 3)
 - `root_rot`: Root rotation quaternion xyzw (N, 4)
-- `dof_pos`: Joint angles for 29 DOF (N, 29)
+- `dof_pos`: Joint DOF positions (N, DOF)
 
 
 ## IK Config
 
-The retargeting uses: `general_motion_retargeting/ik_configs/smplx_to_booster_t1_29dof_inspire_custom.json`
+The retargeting uses: `general_motion_retargeting/ik_configs/smplx_to_t1_inspire.json`
 
-Maps SMPL-X (55 joints) → Booster T1 Inspire Custom (29 DOF):
+Maps SMPL-X (55 joints) → Booster T1 Inspire Custom (59 DOF):
 - Waist: 6 DOF
-- Left/Right Leg: 7 DOF each
+- Left/Right Leg: 6 DOF each
+- Left/Right arm: 9 DOF each
 - Head: 2 DOF
-- Inspire Hands: 40 DOF total (20 per hand)
+- Inspire Hands: 20 DOF total
