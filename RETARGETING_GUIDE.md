@@ -29,8 +29,8 @@ mkdir -p ~/datasets/AMASS/ACCAD
 ```bash
 python scripts/smplx_to_robot.py \
     --smplx_file ~/datasets/AMASS/ACCAD/Male1Walking_c3d/Walk_B15_-_Walk_turn_around_stageii.npz \
-    --robot booster_t1_29dof_inspire_custom \
-    --output_dir outputs/retargeted_motion
+    --robot t1 \
+    --save_path outputs/retargeted_motion
 ```
 
 Output: `outputs/retargeted_motion/Walk_B15_-_Walk_turn_around_stageii.pkl`
@@ -40,8 +40,8 @@ Output: `outputs/retargeted_motion/Walk_B15_-_Walk_turn_around_stageii.pkl`
 ```bash
 python scripts/smplx_to_robot_dataset.py \
     --dataset_path ~/datasets/AMASS/ACCAD/Male1General_c3d \
-    --robot booster_t1_29dof_inspire_custom \
-    --output_dir outputs/retargeted_male1general_t1_inspire
+    --robot t1 \
+    --save_path outputs/retargeted_male1general_t1
 ```
 
 ## Visualize Results
