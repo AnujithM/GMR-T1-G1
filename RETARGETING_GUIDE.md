@@ -46,11 +46,9 @@ python scripts/smplx_to_robot_dataset.py \
 
 ## Visualize Results
 
-**SMPL-X skeleton visualization:**
+**SMPL-X visualization:**
 ```bash
-python scripts/vis_smplx_motion.py \
-    --smplx_file ~/datasets/AMASS/ACCAD/Male1Walking_c3d/Walk_B15_-_Walk_turn_around_stageii.npz \
-    --save_video videos/skeleton.mp4
+python scripts/visualize.py
 ```
 
 **Retargeted robot motion:**
