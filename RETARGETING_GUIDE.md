@@ -54,9 +54,10 @@ python scripts/visualize.py
 **Retargeted robot motion:**
 ```bash
 python scripts/vis_robot_motion.py \
-    --motion_file outputs/retargeted_motion/Walk_B15_-_Walk_turn_around_stageii.pkl \
-    --robot booster_t1_29dof_inspire_custom \
-    --record_video videos/robot_motion.mp4
+    --robot_motion_path outputs/retargeted_motion/Walk_B15_-_Walk_turn_around_stageii.pkl \
+    --robot t1 \
+    --record_video \
+    --video_path videos/robot_motion.mp4
 ```
 
 ## Output Format
