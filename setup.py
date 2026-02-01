@@ -27,6 +27,10 @@ setup(
     "protobuf",
     "redis[hiredis]",
     "imageio[ffmpeg]",
+    "trimesh",
+    "pyrender",
+    "open3d",
+    "torch",
   ],
   python_requires='>=3.10',
 )
