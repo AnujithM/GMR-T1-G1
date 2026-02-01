@@ -92,6 +92,38 @@ BOOSTER_T1_29DOF_INSPIRE_LIMITS = {
     'right_shoulder_yaw': (-2.09, 2.09),
     'right_elbow': (-2.09, 2.09),
 }
+T1_LIMITS = {
+    'waist': (-1.047, 1.047),
+    'left_hip_pitch': (-1.8, 1.57),
+    'left_hip_roll': (-0.3, 1.57),
+    'left_hip_yaw': (-1.0, 1.0),
+    'left_knee_pitch': (0.0, 2.34),
+    'left_ankle_pitch': (-0.87, 0.35),
+    'left_ankle_roll': (-0.44, 0.44),
+    'right_hip_pitch': (-1.8, 1.57),
+    'right_hip_roll': (-1.57, 0.3),
+    'right_hip_yaw': (-1.0, 1.0),
+    'right_knee_pitch': (0.0, 2.34),
+    'right_ankle_pitch': (-0.87, 0.35),
+    'right_ankle_roll': (-0.44, 0.44),
+    'head_yaw': (-1.57, 1.57),
+    'head_pitch': (-0.35, 1.22),
+    'left_shoulder_pitch': (-3.3469, 1.2255),
+    'left_shoulder_roll': (-1.7239, 1.7357),
+    'left_elbow_pitch': (-2.3249, 2.2581),
+    'left_elbow_yaw': (-2.1418, 1.6978),
+    'left_wrist_pitch': (-2.6164, 2.6209),
+    'left_wrist_yaw': (-1.861, 1.4815),
+    'left_hand_roll': (-1.0348, 1.6066),
+    'right_shoulder_pitch': (-3.3953, 1.1954),
+    'right_shoulder_roll': (-1.619, 1.7392),
+    'right_elbow_pitch': (-2.3154, 2.2749),
+    'right_elbow_yaw': (-1.6917, 2.1578),
+    'right_wrist_pitch': (-2.6133, 2.627),
+    'right_wrist_yaw': (-1.4502, 1.8935),
+    'right_hand_roll': (-1.6768, 0.9993),
+}
+
 
 # Keypoint mappings: which body corresponds to each tracking point
 KEYPOINT_MAPS = {
@@ -120,6 +152,14 @@ KEYPOINT_MAPS = {
         'right_foot': 'RightFoot',
     },
     'booster_t1_29dof_inspire_custom': {
+        'pelvis': 'Waist',
+        'head': 'Head',
+        'left_hand': 'LeftHand',
+        'right_hand': 'RightHand',
+        'left_foot': 'LeftFoot',
+        'right_foot': 'RightFoot',
+    },
+    't1': {
         'pelvis': 'Waist',
         'head': 'Head',
         'left_hand': 'LeftHand',
@@ -158,6 +198,11 @@ COLLISION_PAIRS = {
         ('RightHand', 'Waist'),
         ('LeftThigh', 'Waist'),
         ('RightThigh', 'Waist'),
+    ],
+    't1': [
+        ('left_foot_link', 'right_foot_link'),
+        ('left_inspire_hand', 'Trunk'),
+        ('right_inspire_hand', 'Trunk'),
     ],
 }
 
@@ -263,6 +308,77 @@ COLLISION_GROUPS = {
             ('AR1', 'Trunk'),
         ],
     },
+    't1': {
+        'body_to_group': {
+            # Head
+            'H1': 'head',
+            'H2': 'head',
+            # Torso
+            'Trunk': 'torso',
+            'Waist': 'torso',
+            # Upper Arm Left
+            'AL1': 'upper_arm_L',
+            # Upper Arm Right
+            'AR1': 'upper_arm_R',
+            # Forearm Left (includes hand and fingers)
+            'AL2': 'forearm_L', 'AL3': 'forearm_L', 'AL4': 'forearm_L',
+            'AL5': 'forearm_L', 'AL6': 'forearm_L',
+            'left_inspire_hand': 'forearm_L',
+            'left_thumb_1': 'forearm_L', 'left_thumb_2': 'forearm_L',
+            'left_thumb_3': 'forearm_L', 'left_thumb_4': 'forearm_L',
+            'left_index_1': 'forearm_L', 'left_index_2': 'forearm_L',
+            'left_middle_1': 'forearm_L', 'left_middle_2': 'forearm_L',
+            'left_ring_1': 'forearm_L', 'left_ring_2': 'forearm_L',
+            'left_little_1': 'forearm_L', 'left_little_2': 'forearm_L',
+            # Forearm Right (includes hand and fingers)
+            'AR2': 'forearm_R', 'AR3': 'forearm_R', 'AR4': 'forearm_R',
+            'AR5': 'forearm_R', 'AR6': 'forearm_R',
+            'right_inspire_hand': 'forearm_R',
+            'right_thumb_1': 'forearm_R', 'right_thumb_2': 'forearm_R',
+            'right_thumb_3': 'forearm_R', 'right_thumb_4': 'forearm_R',
+            'right_index_1': 'forearm_R', 'right_index_2': 'forearm_R',
+            'right_middle_1': 'forearm_R', 'right_middle_2': 'forearm_R',
+            'right_ring_1': 'forearm_R', 'right_ring_2': 'forearm_R',
+            'right_little_1': 'forearm_R', 'right_little_2': 'forearm_R',
+            # Leg Left (hip, thigh, shank, ankle, foot)
+            'Hip_Pitch_Left': 'leg_L',
+            'Hip_Roll_Left': 'leg_L',
+            'Hip_Yaw_Left': 'leg_L',
+            'Shank_Left': 'leg_L',
+            'Ankle_Cross_Left': 'leg_L',
+            'left_foot_link': 'leg_L',
+            # Leg Right (hip, thigh, shank, ankle, foot)
+            'Hip_Pitch_Right': 'leg_R',
+            'Hip_Roll_Right': 'leg_R',
+            'Hip_Yaw_Right': 'leg_R',
+            'Shank_Right': 'leg_R',
+            'Ankle_Cross_Right': 'leg_R',
+            'right_foot_link': 'leg_R',
+        },
+        'group_pairs': [
+            # Forearm vs opposite upper arm (cross-body)
+            ('forearm_L', 'upper_arm_R'), ('forearm_R', 'upper_arm_L'),
+            # Forearm vs forearm (both arms)
+            ('forearm_L', 'forearm_R'),
+            # Forearm vs torso
+            ('forearm_L', 'torso'), ('forearm_R', 'torso'),
+            # Forearm vs head
+            ('forearm_L', 'head'), ('forearm_R', 'head'),
+            # Forearm vs legs
+            ('forearm_L', 'leg_L'), ('forearm_L', 'leg_R'),
+            ('forearm_R', 'leg_L'), ('forearm_R', 'leg_R'),
+            # Leg vs leg (feet collision)
+            ('leg_L', 'leg_R'),
+        ],
+        # Bodies to skip when checking upper_arm vs torso
+        # (to avoid false positives at shoulder joint)
+        'skip_pairs': [
+            ('AL1', 'Trunk'),  # Upper arm attached to trunk
+            ('AR1', 'Trunk'),
+            ('Hip_Pitch_Left', 'Waist'),  # Hip attached to waist
+            ('Hip_Pitch_Right', 'Waist'),
+        ],
+    },
 }
 
 # Foot body names for each robot
@@ -271,6 +387,7 @@ FOOT_NAMES = {
     'unitree_h1': ['left_foot', 'right_foot'],
     'booster_t1': ['LeftFoot', 'RightFoot'],
     'booster_t1_29dof_inspire_custom': ['left_foot_link', 'right_foot_link'],
+    't1': ['left_foot_link', 'right_foot_link'],
 }
 
 # Robot XML file paths and joint names
@@ -307,6 +424,14 @@ ROBOT_CONFIGS = {
         'collision_groups': COLLISION_GROUPS.get('booster_t1_29dof_inspire_custom'),
         'foot_names': FOOT_NAMES['booster_t1_29dof_inspire_custom'],
     },
+    't1': {
+        'xml': 'assets/t1/t1_robot.xml',
+        'joint_limits': T1_LIMITS,
+        'keypoint_map': KEYPOINT_MAPS['t1'],
+        'collision_pairs': COLLISION_PAIRS['t1'],
+        'collision_groups': COLLISION_GROUPS.get('t1'),
+        'foot_names': FOOT_NAMES['t1'],
+    }
 }
 
 
