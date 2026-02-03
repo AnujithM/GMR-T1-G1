@@ -5,3 +5,4 @@ assets/**/smplx*.zip
 *.pkl
 *.npz
 
+__pycache__/

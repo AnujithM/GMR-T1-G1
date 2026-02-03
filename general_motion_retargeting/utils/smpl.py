@@ -12,39 +12,89 @@ def load_smpl_file(smpl_file):
     return smpl_data
 
 def load_smplx_file(smplx_file, smplx_body_model_path):
-    smplx_data = np.load(smplx_file, allow_pickle=True)
-    body_model = smplx.create(
-        smplx_body_model_path,
-        "smplx",
-        gender=str(smplx_data["gender"]),
-        use_pca=False,
-    )
+    if smplx_file.endswith(".npz"):
+        smplx_data = np.load(smplx_file, allow_pickle=True)
+        body_model = smplx.create(
+            smplx_body_model_path,
+            "smplx",
+            gender=str(smplx_data["gender"]),
+            use_pca=False,
+        )
+
+        num_frames = smplx_data["pose_body"].shape[0]
+        smplx_output = body_model(
+            betas=torch.tensor(smplx_data["betas"]).float().view(1, -1), # (16,)
+            global_orient=torch.tensor(smplx_data["root_orient"]).float(), # (N, 3)
+            body_pose=torch.tensor(smplx_data["pose_body"]).float(), # (N, 63)
+            transl=torch.tensor(smplx_data["trans"]).float(), # (N, 3)
+            left_hand_pose=torch.zeros(num_frames, 45).float(),
+            right_hand_pose=torch.zeros(num_frames, 45).float(),
+            jaw_pose=torch.zeros(num_frames, 3).float(),
+            leye_pose=torch.zeros(num_frames, 3).float(),
+            reye_pose=torch.zeros(num_frames, 3).float(),
+            # expression=torch.zeros(num_frames, 10).float(),
+            return_full_pose=True,
+        )
+        
+        if len(smplx_data["betas"].shape)==1:
+            human_height = 1.66 + 0.1 * smplx_data["betas"][0]
+        else:
+            human_height = 1.66 + 0.1 * smplx_data["betas"][0, 0]
+        
+        return smplx_data, body_model, smplx_output, human_height
+
+
+    elif smplx_file.endswith(".pt"):
+        print("YOU ARE USING GVHMR FOR THIS")
+        smplx_data = torch.load(smplx_file)
+        smplx_data = smplx_data['smpl_params_global']
+        # Helper to convert to tensor without warning
+        def to_tensor(x):
+            if isinstance(x, torch.Tensor):
+                return x.detach().clone().float()
+            return torch.tensor(x).float()
+
+        betas = to_tensor(smplx_data["betas"])
+        if betas.dim() == 1:
+            betas = betas.unsqueeze(0) # (1, D)
+        
+        num_betas = betas.shape[-1]
+
+        body_model = smplx.create(
+            smplx_body_model_path,
+            "smplx",
+            gender=str("MALE"),
+            use_pca=False,
+            num_betas=num_betas,
+        )
+        breakpoint()
+        num_frames = smplx_data["body_pose"].shape[0]
+        smplx_output = body_model(
+            betas=betas, # (N, D) or (1, D)
+            global_orient=to_tensor(smplx_data["global_orient"]), # (N, 3)
+            body_pose=to_tensor(smplx_data["body_pose"]), # (N, 63)
+            transl=to_tensor(smplx_data["transl"]), # (N, 3)
+            left_hand_pose=torch.zeros(num_frames, 45).float(),
+            right_hand_pose=torch.zeros(num_frames, 45).float(),
+            jaw_pose=torch.zeros(num_frames, 3).float(),
+            leye_pose=torch.zeros(num_frames, 3).float(),
+            reye_pose=torch.zeros(num_frames, 3).float(),
+            expression=torch.zeros(num_frames, 10).float(),
+            return_full_pose=True,
+        )
+        
+        if len(smplx_data["betas"].shape)==1:
+            human_height = 1.66 + 0.1 * smplx_data["betas"][0]
+        else:
+            human_height = 1.66 + 0.1 * smplx_data["betas"][0, 0]
+        
+        return smplx_data, body_model, smplx_output, human_height
     # print(smplx_data["pose_body"].shape)
     # print(smplx_data["betas"].shape)
     # print(smplx_data["root_orient"].shape)
     # print(smplx_data["trans"].shape)
     
-    num_frames = smplx_data["pose_body"].shape[0]
-    smplx_output = body_model(
-        betas=torch.tensor(smplx_data["betas"]).float().view(1, -1), # (16,)
-        global_orient=torch.tensor(smplx_data["root_orient"]).float(), # (N, 3)
-        body_pose=torch.tensor(smplx_data["pose_body"]).float(), # (N, 63)
-        transl=torch.tensor(smplx_data["trans"]).float(), # (N, 3)
-        left_hand_pose=torch.zeros(num_frames, 45).float(),
-        right_hand_pose=torch.zeros(num_frames, 45).float(),
-        jaw_pose=torch.zeros(num_frames, 3).float(),
-        leye_pose=torch.zeros(num_frames, 3).float(),
-        reye_pose=torch.zeros(num_frames, 3).float(),
-        # expression=torch.zeros(num_frames, 10).float(),
-        return_full_pose=True,
-    )
-    
-    if len(smplx_data["betas"].shape)==1:
-        human_height = 1.66 + 0.1 * smplx_data["betas"][0]
-    else:
-        human_height = 1.66 + 0.1 * smplx_data["betas"][0, 0]
-    
-    return smplx_data, body_model, smplx_output, human_height
+
 
 
 def load_gvhmr_pred_file(gvhmr_pred_file, smplx_body_model_path):
@@ -176,9 +226,19 @@ def get_smplx_data_offline_fast(smplx_data, body_model, smplx_output, tgt_fps=30
         ...
     }
     """
-    src_fps = smplx_data["mocap_frame_rate"].item()
+    try:
+        src_fps = smplx_data["mocap_frame_rate"].item()
+    except: 
+        src_fps=30
     frame_skip = int(src_fps / tgt_fps)
-    num_frames = smplx_data["pose_body"].shape[0]
+    try:
+        num_frames = smplx_data["pose_body"].shape[0]
+    except KeyError:
+        num_frames = smplx_data["body_pose"].shape[0] 
+        for k, v in smplx_data.items():
+            if type(smplx_data[k]) == torch.Tensor:
+                smplx_data[k] = smplx_data[k].numpy()
+    breakpoint()
     global_orient = smplx_output.global_orient.squeeze()
     full_body_pose = smplx_output.full_pose.reshape(num_frames, -1, 3)
     joints = smplx_output.joints.detach().numpy().squeeze()

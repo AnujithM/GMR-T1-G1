@@ -6,6 +6,7 @@ import json
 from scipy.spatial.transform import Rotation as R
 from .params import ROBOT_XML_DICT, IK_CONFIG_DICT
 from rich import print
+import torch 
 
 class GeneralMotionRetargeting:
     """General Motion Retargeting (GMR).
@@ -150,6 +151,9 @@ class GeneralMotionRetargeting:
     def update_targets(self, human_data, offset_to_ground=False):
         # scale human data in local frame
         human_data = self.to_numpy(human_data)
+        for k, v in self.human_scale_table.items():
+            if type(v) == torch.Tensor:
+                self.human_scale_table[k] = v.numpy()
         human_data = self.scale_human_data(human_data, self.human_root_name, self.human_scale_table)
         human_data = self.offset_human_data(human_data, self.pos_offsets1, self.rot_offsets1)
         human_data = self.apply_ground_offset(human_data)
@@ -256,6 +260,8 @@ class GeneralMotionRetargeting:
                 continue
             else:
                 # transform to local frame (only position)
+                print((human_data[body_name][0] - root_pos))
+                print(human_scale_table[body_name])
                 human_data_local[body_name] = (human_data[body_name][0] - root_pos) * human_scale_table[body_name]
             
         # transform the human data back to the global frame
