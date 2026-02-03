@@ -67,7 +67,6 @@ def load_smplx_file(smplx_file, smplx_body_model_path):
             use_pca=False,
             num_betas=num_betas,
         )
-
         # Rotation to fix coordinate system (Y-up to Z-up)
         # x' = x, y' = -z, z' = y
         rot_fix = torch.tensor([
@@ -258,7 +257,7 @@ def get_smplx_data_offline_fast(smplx_data, body_model, smplx_output, tgt_fps=30
         for k, v in smplx_data.items():
             if type(smplx_data[k]) == torch.Tensor:
                 smplx_data[k] = smplx_data[k].numpy()
-    breakpoint()
+
     global_orient = smplx_output.global_orient.squeeze()
     full_body_pose = smplx_output.full_pose.reshape(num_frames, -1, 3)
     joints = smplx_output.joints.detach().numpy().squeeze()
