@@ -67,13 +67,33 @@ def load_smplx_file(smplx_file, smplx_body_model_path):
             use_pca=False,
             num_betas=num_betas,
         )
-        breakpoint()
+
+        # Rotation to fix coordinate system (Y-up to Z-up)
+        # x' = x, y' = -z, z' = y
+        rot_fix = torch.tensor([
+            [1, 0, 0],
+            [0, 0, -1],
+            [0, 1, 0]
+        ]).float()
+
+        # Apply to translation
+        transl = to_tensor(smplx_data["transl"])
+        transl = torch.matmul(transl, rot_fix.T)
+
+        # Apply to global orientation
+        global_orient = to_tensor(smplx_data["global_orient"])
+        r_global = R.from_rotvec(global_orient.numpy())
+        mat_global = r_global.as_matrix() # (N, 3, 3)
+        # R_new = R_fix @ R_old
+        mat_new = np.matmul(rot_fix.numpy(), mat_global)
+        global_orient = torch.tensor(R.from_matrix(mat_new).as_rotvec()).float()
+
         num_frames = smplx_data["body_pose"].shape[0]
         smplx_output = body_model(
             betas=betas, # (N, D) or (1, D)
-            global_orient=to_tensor(smplx_data["global_orient"]), # (N, 3)
+            global_orient=global_orient, # (N, 3)
             body_pose=to_tensor(smplx_data["body_pose"]), # (N, 63)
-            transl=to_tensor(smplx_data["transl"]), # (N, 3)
+            transl=transl, # (N, 3)
             left_hand_pose=torch.zeros(num_frames, 45).float(),
             right_hand_pose=torch.zeros(num_frames, 45).float(),
             jaw_pose=torch.zeros(num_frames, 3).float(),
