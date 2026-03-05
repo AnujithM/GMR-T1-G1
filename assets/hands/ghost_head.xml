@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ghost head model for Rerun IK target visualization.
+     Uses freejoint for arbitrary world positioning. -->
+<mujoco model="ghost_head">
+    <compiler angle="radian" meshdir="../t1/meshes/"/>
+    <size njmax="100" nconmax="50" />
+
+    <default>
+        <joint limited="true" damping="0.01" armature="0.01" frictionloss="0.0" />
+        <default class="visual">
+            <geom type="mesh" contype="0" conaffinity="0" group="2" density="0"/>
+        </default>
+    </default>
+
+    <asset>
+        <mesh name="H1" file="H1.STL" />
+        <mesh name="H2" file="H2.STL" />
+    </asset>
+
+    <worldbody>
+        <!-- Root body with freejoint for arbitrary positioning -->
+        <body name="ghost_head_root" pos="0 0 0">
+            <inertial pos="0 0 0" mass="1e-4" diaginertia="1e-6 1e-6 1e-6" />
+            <freejoint name="ghost_head_free"/>
+            
+            <!-- H1 (neck base) -->
+            <body name="H1_ghost" pos="0 0 0">
+                <geom type="mesh" contype="0" conaffinity="0" group="1" 
+                      rgba="0.4 0.6 1.0 0.5" mesh="H1" />
+                
+                <!-- H2 (head) - fixed at zero rotation for ghost -->
+                <body name="H2_ghost" pos="0 0 0.06185">
+                    <geom type="mesh" contype="0" conaffinity="0" group="1" 
+                          rgba="0.4 0.6 1.0 0.5" mesh="H2" />
+                </body>
+            </body>
+        </body>
+    </worldbody>
+</mujoco>

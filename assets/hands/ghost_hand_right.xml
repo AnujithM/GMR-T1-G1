@@ -1,0 +1,56 @@
+<mujocoinclude>
+    <!-- Right Inspire Hand Ghost -->
+    <!-- Position matches FALCON joint origin in AR6 frame -->
+    <body name="right_inspire_hand_ghost" pos="0.00475 -0.07 0.0015" mocap="true">
+        <geom pos="-0.00676 -0.03507 -0.00244" quat="0 0 -0.707108 0.707105" 
+              class="visual" mesh="right_hand_base_link" rgba="0 0.8 0.2 0.3" contype="0" conaffinity="0"/>
+        <geom pos="-0.00640 -0.04737 -0.00244" quat="0 0 -0.707108 0.707105" 
+              class="visual" mesh="right_hand_palm_force_sensor" rgba="0 0.8 0.2 0.15" contype="0" conaffinity="0"/>
+        
+        <!-- Thumb chain (rigid zero pose) -->
+        <body name="right_thumb_1_ghost" pos="0.020139 -0.103969 -0.023447" quat="0.000001 -0.000001 -0.707108 0.707105">
+            <geom class="visual" mesh="right_hand_thumb_1" rgba="0 0.8 0.2 0.3" contype="0" conaffinity="0"/>
+            <body name="right_thumb_2_ghost" pos="-0.0079252 0.0090599 0.0052" quat="0.0922934 0.0922938 0.701059 0.701056">
+                <geom class="visual" mesh="right_hand_thumb_2" rgba="0 0.8 0.2 0.3" contype="0" conaffinity="0"/>
+                <body name="right_thumb_3_ghost" pos="0.031403 0.021069 0.00095">
+                    <geom class="visual" mesh="right_hand_thumb_3" rgba="0 0.8 0.2 0.3" contype="0" conaffinity="0"/>
+                    <body name="right_thumb_4_ghost" pos="0.021903 0.012816 -0.0003">
+                        <geom class="visual" mesh="right_hand_thumb_4" rgba="0 0.8 0.2 0.3" contype="0" conaffinity="0"/>
+                    </body>
+                </body>
+            </body>
+        </body>
+
+        <!-- Index finger chain (rigid zero pose) -->
+        <body name="right_index_1_ghost" pos="0.031918 -0.191469 -0.003002" quat="0.012340 -0.707000 -0.012337 -0.706998">
+            <geom class="visual" mesh="right_hand_index_1" rgba="0 0.8 0.2 0.3" contype="0" conaffinity="0"/>
+            <body name="right_index_2_ghost" pos="-0.0034259 0.032596 -0.00055">
+                <geom class="visual" mesh="right_hand_index_2" rgba="0 0.8 0.2 0.3" contype="0" conaffinity="0"/>
+            </body>
+        </body>
+
+        <!-- Middle finger chain (rigid zero pose) -->
+        <body name="right_middle_1_ghost" pos="0.010339 -0.192069 -0.003002" quat="0.000002 -0.707108 0.000001 -0.707105">
+            <geom class="visual" mesh="right_hand_middle_1" rgba="0 0.8 0.2 0.3" contype="0" conaffinity="0"/>
+            <body name="right_middle_2_ghost" pos="-0.0034259 0.032596 -0.00055">
+                <geom class="visual" mesh="right_hand_middle_2" rgba="0 0.8 0.2 0.3" contype="0" conaffinity="0"/>
+            </body>
+        </body>
+
+        <!-- Ring finger chain (rigid zero pose) -->
+        <body name="right_ring_1_ghost" pos="-0.011292 -0.191899 -0.003002" quat="-0.018523 -0.706865 0.018525 -0.706863">
+            <geom class="visual" mesh="right_hand_ring_1" rgba="0 0.8 0.2 0.3" contype="0" conaffinity="0"/>
+            <body name="right_ring_2_ghost" pos="-0.0034259 0.032596 -0.00055">
+                <geom class="visual" mesh="right_hand_ring_2" rgba="0 0.8 0.2 0.3" contype="0" conaffinity="0"/>
+            </body>
+        </body>
+
+        <!-- Little finger chain (rigid zero pose) -->
+        <body name="right_little_1_ghost" pos="-0.032677 -0.188719 -0.003002" quat="-0.036999 -0.706139 0.037001 -0.706137">
+            <geom class="visual" mesh="right_hand_little_1" rgba="0 0.8 0.2 0.3" contype="0" conaffinity="0"/>
+            <body name="right_little_2_ghost" pos="-0.0034259 0.032596 -0.00055">
+                <geom class="visual" mesh="right_hand_little_2" rgba="0 0.8 0.2 0.3" contype="0" conaffinity="0"/>
+            </body>
+        </body>
+    </body>
+</mujocoinclude>
