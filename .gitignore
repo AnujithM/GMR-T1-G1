@@ -6,3 +6,5 @@ assets/**/smplx*.zip
 *.npz
 
 __pycache__/
+
+MUJOCO_LOG.TXT

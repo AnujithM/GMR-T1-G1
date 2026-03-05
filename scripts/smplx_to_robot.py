@@ -78,7 +78,6 @@ if __name__ == "__main__":
     # align fps
     tgt_fps = 30
     smplx_data_frames, aligned_fps = get_smplx_data_offline_fast(smplx_data, body_model, smplx_output, tgt_fps=tgt_fps)
-    breakpoint()
    
     # Initialize the retargeting system
     retarget = GMR(
@@ -142,7 +141,7 @@ if __name__ == "__main__":
             human_pos_offset=np.array([0.0, 0.0, 0.0]),
             show_human_body_name=False,
             rate_limit=args.rate_limit,
-            follow_camera=False,
+            follow_camera=True,
         )
         if args.save_path is not None:
             qpos_list.append(qpos)
