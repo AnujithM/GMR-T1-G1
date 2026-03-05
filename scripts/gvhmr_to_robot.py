@@ -60,6 +60,13 @@ if __name__ == "__main__":
         help="Limit the rate of the retargeted robot motion to keep the same as the human motion.",
     )
 
+    parser.add_argument(
+        "--headless",
+        default=False,
+        action="store_true",
+        help="Run in headless mode (no visualization). Useful for SSH/remote connections.",
+    )
+
     args = parser.parse_args()
 
 
@@ -84,11 +91,15 @@ if __name__ == "__main__":
         tgt_robot=args.robot,
     )
     
-    robot_motion_viewer = RobotMotionViewer(robot_type=args.robot,
-                                            motion_fps=aligned_fps,
-                                            transparent_robot=0,
-                                            record_video=args.record_video,
-                                            video_path=f"videos/{args.robot}_{args.gvhmr_pred_file.split('/')[-1].split('.')[0]}.mp4",)
+    # Initialize the viewer only if not in headless mode
+    if not args.headless:
+        robot_motion_viewer = RobotMotionViewer(robot_type=args.robot,
+                                                motion_fps=aligned_fps,
+                                                transparent_robot=0,
+                                                record_video=args.record_video,
+                                                video_path=f"videos/{args.robot}_{args.gvhmr_pred_file.split('/')[-1].split('.')[0]}.mp4",)
+    else:
+        robot_motion_viewer = None
     
 
     curr_frame = 0
@@ -129,17 +140,18 @@ if __name__ == "__main__":
         # retarget
         qpos = retarget.retarget(smplx_data)
 
-        # visualize
-        robot_motion_viewer.step(
-            root_pos=qpos[:3],
-            root_rot=qpos[3:7],
-            dof_pos=qpos[7:],
-            human_motion_data=retarget.scaled_human_data,
-            # human_motion_data=smplx_data,
-            human_pos_offset=np.array([0.0, 0.0, 0.0]),
-            show_human_body_name=False,
-            rate_limit=args.rate_limit,
-        )
+        # visualize (skip if in headless mode)
+        if not args.headless:
+            robot_motion_viewer.step(
+                root_pos=qpos[:3],
+                root_rot=qpos[3:7],
+                dof_pos=qpos[7:],
+                human_motion_data=retarget.scaled_human_data,
+                # human_motion_data=smplx_data,
+                human_pos_offset=np.array([0.0, 0.0, 0.0]),
+                show_human_body_name=False,
+                rate_limit=args.rate_limit,
+            )
         if args.save_path is not None:
             qpos_list.append(qpos)
             
@@ -166,4 +178,5 @@ if __name__ == "__main__":
             
       
     
-    robot_motion_viewer.close()
+    if robot_motion_viewer is not None:
+        robot_motion_viewer.close()
